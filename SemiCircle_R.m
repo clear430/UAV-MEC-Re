@@ -1,6 +1,6 @@
 
-%-----------------------函数TwoStageAlgorithm----------------------
-%功能：部分卸载模式下的优化算法
+%-----------------------SemiCircle_R----------------------
+%功能：半圆轨迹部分卸载模式下的优化算法
 %输入：
 %       M:                               用户数量
 %       W_m:                             用户权重向量
@@ -11,7 +11,7 @@
 %       t_opt：                          各时隙最优卸载时间
 %       qu_opt：                         各时隙无人机最优位置
 %       R_opt：                          最优总计算量
-function[f_opt,P_opt,t_opt,Qu_opt,R_opt] = TwoStageAlgorithm(M,W_m,Q_m)
+function[f_opt,P_opt,t_opt,R_opt] = SemiCircle_R(M,W_m,Q_m)
 global N;
 global T;
 global Height;
@@ -22,7 +22,6 @@ global Sigma;
 global Gamma_c;
 global Beta;
 global Epsilon;
-global V_max;
 global P_0;
 global vm;
     f_opt = zeros(M,N);
@@ -43,8 +42,8 @@ global vm;
             variable Z_temp(M,N)
             variable t_temp(M,N)
             expression p2_obj(M,N)
-            expression c5_left(M,N)%约束条件C5等式左
-            c5_right = zeros(M,N);%约束条件C5等式右
+            expression c5_left(M,N)
+            c5_right = zeros(M,N);
             for user = 1:M
                 for slot = 1:N
                     H_mn(user,slot) = Beta/(Height^2+norm(Qu_opt(slot,:)-Q_m(user,:))^2);
@@ -63,59 +62,28 @@ global vm;
                 for slot = 2:N
                     c5_left(:,slot) = c5_left(:,slot-1)+Gamma_c*pow_p(f_temp(:,slot),3)+Z_temp(:,slot);
                 end
+                %c5_left = Gamma_c*pow_p(f_temp,3)+Z_temp;
                 for slot = 1:N
                     for user = 1:M
                         f_temp(user,slot) >= 0;
                         Z_temp(user,slot) >= 0;
                         t_temp(user,slot) >= 0;
-                        %每个时隙累积能量限制
-                        %  c5_left(user,slot)<= c5_right(user,slot);%Eta_0*T/N*P_0*H_mn(user,slot);
+                          %每个时隙累积能量限制
+                        %c5_left(user,slot)<= c5_right(user,slot);%Eta_0*T/N*P_0*H_mn(user,slot);
                         Gamma_c*pow_p(f_temp(user,slot),3)+Z_temp(user,slot) <= Eta_0*T/N*P_0*H_mn(user,slot);
                     end
                     sum(t_temp(:,slot)) <= 1;
-                end  
+                end
+                %总能量限制
+%                 for user = 1:M
+%                     sum(c5_left(user,:)) <= Eta_0*T/N*P_0*sum(H_mn(user,:));
+%                 end
         cvx_end
         f_opt = f_temp;
         P_opt = Z_temp./t_temp;
         t_opt = t_temp;
-        display(['轨迹优化中...................']);
-%轨迹优化
-        while(1)
-            cvx_begin quiet
-                cvx_expert true
-                variable x_temp(N)
-                variable y_temp(N)
-                expression p4_obj(M)
-                for user = 1:M
-                    for slot = 1:N
-                        p4_obj(user) = W_m(user)*B*T*t_opt(user,slot)*...
-                            (log(1+Beta*P_opt(user,slot)/Sigma/(Height^2+norm(Qu_opt(slot,:)-Q_m(user,:))^2))/log(2)...
-                            -Beta*P_opt(user,slot)*log2(exp(1))/(Sigma*Height^2+Beta*P_opt(user,slot)+Sigma*norm(Qu_opt(slot,:))^2)/(Height^2+norm(Qu_opt(slot,:))^2)...
-                            *(((Qu_opt(slot,1)-x_temp(slot))^2)+(Qu_opt(slot,2)-y_temp(slot))^2))...
-                            /vm/N;
-                    end
-                end
-                maximize sum(p4_obj)
-                subject to
-                    norms([[x_temp',Q_m(M,1)]-[Q_m(1,1),x_temp'];[y_temp',Q_m(M,2)]-[Q_m(M,2),y_temp']],2,1)<=V_max*T/N;
-                    for user = 1:M
-                        for slot = 1:N
-                            Gamma_c*f_opt(user,slot)^3+t_opt(user,slot)*P_opt(user,slot)...
-                                <= Eta_0*P_0*Beta*(Height^2+2*norm(Qu_opt(slot,:)-Q_m(user,:))^2-...
-                                ((x_temp(slot)-Q_m(user,1))^2+(y_temp(slot)-Q_m(user,2))^2))...
-                                /(Height^2+norm(Qu_opt(slot,:)-Q_m(user,:))^2)^2;
-                        end
-                    end
-            cvx_end 
-            location_var =  sum((x_temp-Qu_opt(:,1)).^2+(y_temp-Qu_opt(:,2)).^2);
-            display(['路径差',num2str(location_var)]);
-            if location_var<10^-2 %Epsilon
-                break
-            end
-            Qu_opt = [x_temp y_temp];
-        end
 %计算总数据量
-        R_sum = sum(p4_obj);
+        R_sum = cvx_optval;
         display(['总数据量',num2str(R_sum)]);
         if (R_sum-R_sum_last) <= Epsilon
             R_opt = R_sum;
